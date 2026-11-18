@@ -2,5 +2,5 @@
 headscale_ui_version: "2026.03.17"
 headscale_ui_checksum: "sha256:e959dde83569233a8643917e5c58f596b433709556b86f9e998c729d01a6cb29"
 headscale_ui_root: /srv/headscale-ui
-headscale_ui_listen_address: "{{ ansible_default_ipv4.address }}"
+headscale_ui_listen_address: "{{ ansible_facts.default_ipv4.address }}"
 headscale_ui_port: 8081
