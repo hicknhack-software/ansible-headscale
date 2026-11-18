@@ -1,0 +1,78 @@
+---
+- name: Enroll a tailnet client and verify the guest is isolated
+  hosts: tailnet-client
+  become: true
+  vars:
+    headscale_client_accept_routes: true
+  roles:
+    - hicknhack-software.headscale/client
+  tasks:
+    - name: Verify SSH is unreachable before the route is approved
+      ansible.builtin.wait_for:
+        host: 10.241.0.10
+        port: 22
+        state: stopped
+        timeout: 5
+
+- name: Enroll the router under the existing Headscale user and approve its routes
+  hosts: subnet-router
+  become: true
+  vars:
+    headscale_client_routes:
+      - 10.241.0.0/24
+      - 198.51.100.0/24
+  roles:
+    - hicknhack-software.headscale/client
+  tasks:
+    - name: Record the router's original Headscale node ID
+      ansible.builtin.set_fact:
+        test_headscale_router_id: "{{ headscale_client_node_id }}"
+
+- name: Reach a private guest through Tailscale
+  hosts: tailnet-client
+  gather_facts: false
+  tasks:
+    - name: Read the private guest OpenSSH banner over the advertised subnet
+      ansible.builtin.wait_for:
+        host: 10.241.0.10
+        port: 22
+        search_regex: '^SSH-2.0-OpenSSH'
+        timeout: 60
+
+- name: Withdraw the router's advertisements and approvals
+  hosts: subnet-router
+  become: true
+  pre_tasks:
+    - name: Stop the router to exercise resuming an enrolled node
+      ansible.builtin.command: tailscale down
+  roles:
+    - hicknhack-software.headscale/client
+  tasks:
+    - name: Read the former router's direct Headscale record
+      ansible.builtin.command:
+        argv: [headscale, nodes, list, --output, json]
+      delegate_to: "{{ headscale_client_admin_host }}"
+      register: test_headscale_nodes
+      changed_when: false
+      no_log: true
+
+    - name: Verify the same node now has an empty approval list
+      ansible.builtin.assert:
+        that:
+          - test_headscale_router | length == 1
+          - (test_headscale_router[0].id | string) == (test_headscale_router_id | string)
+          - test_headscale_router[0].approved_routes | default([], true) | length == 0
+      vars:
+        test_headscale_router: >-
+          {{ test_headscale_nodes.stdout | from_json | selectattr('name', 'equalto', 'subnet-router') | list }}
+
+- name: Verify SSH stops working after revocation
+  hosts: tailnet-client
+  gather_facts: false
+  tasks:
+    - name: Check the private subnet no longer reaches the guest
+      ansible.builtin.wait_for:
+        host: 10.241.0.10
+        port: 22
+        state: stopped
+        timeout: 45

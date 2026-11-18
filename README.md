@@ -18,6 +18,7 @@ The `postgresql` role has no parameters. It installs the distribution's PostgreS
 | `headscale_listen_address` | VM default IPv4 address | Private address on which Headscale listens. |
 | `headscale_port` | `8080` | Private HTTP port for the control API and DERP. |
 | `headscale_trusted_proxies` | `[]` | CIDRs allowed to supply client IP headers. Set this to the Apache proxy's private address with a `/32` prefix. |
+| `headscale_dns_split_nameservers` | `{}` | Map of DNS suffixes to resolver addresses reachable from enrolled clients. Clients use these resolvers for the listed suffixes and keep their normal DNS for other domains. |
 | `headscale_version` | `0.29.7` | Upstream release version and installed Debian package version. |
 | `headscale_deb_arch` | `amd64` | Debian architecture in the upstream asset name. |
 | `headscale_deb_checksum` | Pinned SHA-256 | Digest in `sha256:<hex>` format. Update it with the release version or architecture. |
@@ -58,9 +59,24 @@ The role replaces the stock Nginx site on the dedicated VM. The UI lives under `
 
 Apache sends `/web` and its subpaths to Nginx on the VM and forwards other requests to Headscale, including protocol upgrades. Public HTTPS goes through Apache. Only SSH and the relay's UDP STUN port need dedicated host forwards.
 
+## Tailscale client and subnet router
+
+Run `hicknhack-software.headscale/client` on a Debian or Ubuntu system that can reach the intended subnets and the Headscale URL. The role uses the Tailscale stable APT repository and delegates Headscale CLI commands over Ansible to the inventory host running Headscale 0.29.7. Run with privilege escalation on both hosts.
+
+| Parameter | Default | Purpose |
+| --- | --- | --- |
+| `headscale_client_server_url` | Required | Headscale control URL reachable from the Tailscale node. Use the public HTTPS URL for production. |
+| `headscale_client_user` | Required | Name of the user that owns the new node. The role creates this user if it is missing. |
+| `headscale_client_admin_host` | Current inventory host | Ansible host that can run the Headscale CLI against its local server socket. Set this to the server's inventory name for a separate subnet router. |
+| `headscale_client_hostname` | Short inventory hostname | Hostname the client advertises to Headscale. |
+| `headscale_client_routes` | `[]` | Complete list of canonical IPv4 or IPv6 subnet CIDRs to advertise and approve for this node. An empty list withdraws its routes. |
+| `headscale_client_accept_routes` | `false` | Accept routes advertised by other routers. Enable this for a Linux workstation that needs to reach the advertised subnets. |
+
+The role generates a single-use, ten-minute key for initial enrollment and deletes its temporary file. It verifies the node's identity before managing advertisements or approvals. It persists IP forwarding for the specified address families in `/etc/sysctl.d/99-headscale-subnet-router.conf`. With a permissive Headscale policy, any tailnet node can use an approved route. Limit access with grants if only particular users or ports should be reachable. [Headscale subnet route policy](https://headscale.net/0.29.7/ref/routes/#restrict-the-use-of-a-subnet-router-with-a-policy)
+
 ## Local development
 
-Use Docker Compose to start the Ansible controller and an Ubuntu Noble test guest. The test runs the PostgreSQL, server and UI roles and checks the API and UI over the guest network.
+Use Docker Compose to start the Ansible controller, Headscale, a subnet router, a tailnet client and an OpenSSH guest on an isolated network. The suite tests the database, API and UI, creates a Headscale user, enrolls both devices under that user, and checks that SSH to the isolated guest works only while the route is approved.
 
 ```bash
 docker compose up -d

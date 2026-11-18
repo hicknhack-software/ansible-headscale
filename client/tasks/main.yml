@@ -1,0 +1,24 @@
+---
+- name: Validate the Headscale client settings
+  ansible.builtin.assert:
+    that:
+      - headscale_client_server_url is match('^https?://[^/]+/?$')
+      - headscale_client_user is string and headscale_client_user | trim | length > 0
+      - headscale_client_routes is sequence and headscale_client_routes is not string and headscale_client_routes is not mapping
+      - headscale_client_routes | reject('string') | list | length == 0
+      - "'0.0.0.0/0' not in headscale_client_routes and '::/0' not in headscale_client_routes"
+
+- name: Install Tailscale
+  ansible.builtin.import_tasks: install.yml
+
+- name: Register the node and manage its subnet routes
+  when: not ansible_check_mode
+  block:
+    - name: Register the node with Headscale
+      ansible.builtin.import_tasks: register.yml
+
+    - name: Configure and approve the node's routes
+      ansible.builtin.import_tasks: routes.yml
+  vars:
+    headscale_client_url: "{{ headscale_client_server_url | regex_replace('/+$', '') }}"
+    headscale_client_route_list: "{{ headscale_client_routes | unique | sort }}"

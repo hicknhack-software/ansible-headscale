@@ -2,7 +2,7 @@
   "name": "headscale-ansible-dev",
   "dockerComposeFile": ["../docker-compose.yml", "docker-compose.override.yml"],
   "service": "ansible",
-  "runServices": ["ansible", "headscale-vm"],
+  "runServices": ["ansible", "headscale-vm", "subnet-router", "tailnet-client", "ssh-guest"],
   "overrideCommand": true,
   "containerUser": "root",
   "workspaceFolder": "/etc/ansible/roles/hicknhack-software.headscale",

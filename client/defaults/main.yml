@@ -1,0 +1,5 @@
+---
+headscale_client_admin_host: "{{ inventory_hostname }}"
+headscale_client_hostname: "{{ inventory_hostname_short }}"
+headscale_client_routes: []
+headscale_client_accept_routes: false

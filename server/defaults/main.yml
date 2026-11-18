@@ -6,6 +6,7 @@ headscale_deb_checksum: "sha256:d230c5fc8db06cf1868f4ec0077b89e5e2ccf3b22a3259ef
 headscale_listen_address: "{{ ansible_facts.default_ipv4.address }}"
 headscale_port: 8080
 headscale_trusted_proxies: []
+headscale_dns_split_nameservers: {}
 
 headscale_derp_enabled: false
 headscale_derp_region_id: 999

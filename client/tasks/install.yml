@@ -1,0 +1,49 @@
+---
+- name: Install the Tailscale APT prerequisites
+  ansible.builtin.apt:
+    name: ca-certificates
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Configure the Tailscale stable APT repository
+  when: not ansible_check_mode
+  vars:
+    tailscale_apt_distribution: "{{ ansible_facts.distribution | lower }}"
+    tailscale_apt_release: "{{ ansible_facts.distribution_release }}"
+    tailscale_apt_url: "https://pkgs.tailscale.com/stable/{{ tailscale_apt_distribution }}"
+  block:
+    - name: Install the Tailscale repository signing key
+      ansible.builtin.get_url:
+        url: "{{ tailscale_apt_url }}/{{ tailscale_apt_release }}.noarmor.gpg"
+        dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+        owner: root
+        group: root
+        mode: "0644"
+      register: tailscale_apt_key
+
+    - name: Configure the signed Tailscale package source
+      ansible.builtin.copy:
+        content: |
+          deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] {{ tailscale_apt_url }} {{ tailscale_apt_release }} main
+        dest: /etc/apt/sources.list.d/tailscale.list
+        owner: root
+        group: root
+        mode: "0644"
+      register: tailscale_apt_source
+
+    - name: Check whether Tailscale is installed
+      ansible.builtin.package_facts:
+
+    - name: Install Tailscale
+      ansible.builtin.apt:
+        name: tailscale
+        update_cache: true
+        cache_valid_time: "{{ 0 if tailscale_apt_refresh else 3600 }}"
+      vars:
+        tailscale_apt_refresh: "{{ tailscale_apt_key.changed or tailscale_apt_source.changed or 'tailscale' not in ansible_facts.packages }}"
+
+    - name: Enable and start tailscaled
+      ansible.builtin.systemd_service:
+        name: tailscaled
+        enabled: true
+        state: started

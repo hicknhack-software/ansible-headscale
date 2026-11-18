@@ -1,0 +1,70 @@
+---
+- name: Enable IPv4 forwarding for advertised IPv4 routes
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    sysctl_file: /etc/sysctl.d/99-headscale-subnet-router.conf
+    sysctl_set: true
+    reload: false
+  when: headscale_client_route_list | reject('search', ':') | list | length > 0
+
+- name: Enable IPv6 forwarding for advertised IPv6 routes
+  ansible.posix.sysctl:
+    name: net.ipv6.conf.all.forwarding
+    value: "1"
+    sysctl_file: /etc/sysctl.d/99-headscale-subnet-router.conf
+    sysctl_set: true
+    reload: false
+  when: headscale_client_route_list | select('search', ':') | list | length > 0
+
+- name: Read Tailscale's active preferences
+  ansible.builtin.command: tailscale debug prefs
+  register: headscale_client_prefs
+  changed_when: false
+  no_log: true
+
+- name: Apply the preferred node name and routes
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - set
+      - "--hostname={{ headscale_client_hostname }}"
+      - "--advertise-routes={{ headscale_client_route_list | join(',') }}"
+      - "--accept-routes={{ headscale_client_accept_routes | bool | ternary('true', 'false') }}"
+  when: >-
+    (headscale_client_preferences.AdvertiseRoutes | default([], true) | sort) != headscale_client_route_list or
+    headscale_client_preferences.Hostname != headscale_client_hostname or
+    headscale_client_preferences.RouteAll != (headscale_client_accept_routes | bool)
+  vars:
+    headscale_client_preferences: "{{ headscale_client_prefs.stdout | from_json }}"
+
+- name: Wait for Headscale to see the intended route advertisements
+  ansible.builtin.command:
+    argv: [headscale, nodes, list-routes, --identifier, "{{ headscale_client_node_id | string }}", --output, json]
+  delegate_to: "{{ headscale_client_admin_host }}"
+  register: headscale_client_route_status
+  changed_when: false
+  until: >-
+    ((headscale_client_route_record.available_routes | default([], true)) | sort) == headscale_client_route_list
+  retries: 15
+  delay: 2
+  vars:
+    headscale_client_route_record: >-
+      {{ (headscale_client_route_status.stdout | from_json | default([], true)) | first | default({}) }}
+  no_log: true
+
+- name: Approve the configured routes for this node
+  ansible.builtin.command:
+    argv:
+      - headscale
+      - nodes
+      - approve-routes
+      - --identifier
+      - "{{ headscale_client_node_id | string }}"
+      - "--routes={{ headscale_client_route_list | join(',') }}"
+  delegate_to: "{{ headscale_client_admin_host }}"
+  when: >-
+    ((headscale_client_route_record.approved_routes | default([], true)) | sort) != headscale_client_route_list
+  vars:
+    headscale_client_route_record: >-
+      {{ (headscale_client_route_status.stdout | from_json | default([], true)) | first | default({}) }}

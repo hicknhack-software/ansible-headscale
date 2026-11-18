@@ -1,6 +1,16 @@
 ---
 name: ansible-headscale
 
+x-test-vm: &test-vm
+  image: ghcr.io/hicknhack-software/ansible-target:noble
+  privileged: true
+  tmpfs:
+    - /run
+    - /run/lock
+    - /tmp
+  volumes:
+    - test-ssh:/root/.ssh:ro
+
 services:
   ansible:
     image: ghcr.io/hicknhack-software/ansible:noble-2.18.7
@@ -13,17 +23,32 @@ services:
       - test-ssh:/test-ssh
 
   headscale-vm:
-    image: ghcr.io/hicknhack-software/ansible-target:noble
-    privileged: true
-    tmpfs:
-      - /run
-      - /run/lock
-      - /tmp
-    volumes:
-      - test-ssh:/root/.ssh:ro
+    <<: *test-vm
     ports:
       - "127.0.0.1:18080:8080"
       - "127.0.0.1:18081:8081"
+
+  subnet-router:
+    <<: *test-vm
+    networks:
+      - default
+      - guests
+
+  tailnet-client:
+    <<: *test-vm
+
+  ssh-guest:
+    <<: *test-vm
+    networks:
+      guests:
+        ipv4_address: 10.241.0.10
+
+networks:
+  guests:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.241.0.0/24
 
 volumes:
   test-ssh:

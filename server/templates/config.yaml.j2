@@ -45,3 +45,7 @@ policy:
 dns:
   magic_dns: false
   override_local_dns: false
+{% if headscale_dns_split_nameservers %}
+  nameservers:
+    split: {{ headscale_dns_split_nameservers | to_json }}
+{% endif %}

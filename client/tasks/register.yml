@@ -1,0 +1,164 @@
+---
+- name: Check that the router can reach Headscale
+  ansible.builtin.uri:
+    url: "{{ headscale_client_url }}/health"
+
+- name: Read the Tailscale login state
+  ansible.builtin.command: tailscale status --json --peers=false
+  register: headscale_client_initial_status
+  changed_when: false
+  until: >-
+    headscale_client_initial_status.stdout | length > 0 and
+    (headscale_client_initial_status.stdout | from_json).BackendState not in ['NoState', 'Starting']
+  retries: 10
+  delay: 2
+
+- name: Read the current Tailscale preferences
+  ansible.builtin.command: tailscale debug prefs
+  register: headscale_client_initial_prefs
+  changed_when: false
+  no_log: true
+
+- name: Check that the node is ready for enrollment or already uses this Headscale
+  ansible.builtin.assert:
+    that:
+      - headscale_client_initial_state in ['NeedsLogin', 'Running', 'Stopped']
+      - >-
+        headscale_client_initial_state == 'NeedsLogin' or
+        ((headscale_client_initial_prefs.stdout | from_json).ControlURL
+        | regex_replace('/+$', '')) == headscale_client_url
+    fail_msg: "Tailscale is awaiting approval or already connected to a different control server."
+  vars:
+    headscale_client_initial_state: "{{ (headscale_client_initial_status.stdout | from_json).BackendState }}"
+
+- name: Ensure the requested Headscale user exists
+  delegate_to: "{{ headscale_client_admin_host }}"
+  block:
+    - name: Look up the Headscale user
+      ansible.builtin.command:
+        argv: [headscale, users, list, --name, "{{ headscale_client_user }}", --output, json]
+      register: headscale_client_users
+      changed_when: false
+
+    - name: Create the missing user and look up its ID
+      when: (headscale_client_users.stdout | from_json | default([], true)) | length == 0
+      block:
+        - name: Create the Headscale user
+          ansible.builtin.command:
+            argv: [headscale, users, create, --, "{{ headscale_client_user }}"]
+          register: headscale_client_user_creation
+          changed_when: headscale_client_user_creation.rc == 0
+          failed_when: false
+
+        - name: Look up the user after creation
+          ansible.builtin.command:
+            argv: [headscale, users, list, --name, "{{ headscale_client_user }}", --output, json]
+          register: headscale_client_created_users
+          changed_when: false
+
+- name: Select the Headscale user
+  ansible.builtin.set_fact:
+    headscale_client_user_records: >-
+      {{ ((headscale_client_created_users.stdout | default(headscale_client_users.stdout))
+          | from_json | default([], true)) }}
+
+- name: Require exactly one matching Headscale user
+  ansible.builtin.assert:
+    that:
+      - headscale_client_user_records | length == 1
+    fail_msg: >-
+      Expected one Headscale user named {{ headscale_client_user }}.
+      {{ headscale_client_user_creation.stderr | default('') }}
+
+- name: Enroll Tailscale with a single-use Headscale key
+  when: (headscale_client_initial_status.stdout | from_json).BackendState == 'NeedsLogin'
+  block:
+    - name: Create a ten-minute enrollment key
+      ansible.builtin.command:
+        argv:
+          - headscale
+          - preauthkeys
+          - create
+          - --user
+          - "{{ headscale_client_user_records[0].id | string }}"
+          - --expiration
+          - 10m
+      delegate_to: "{{ headscale_client_admin_host }}"
+      register: headscale_client_auth_key
+      no_log: true
+
+    - name: Allocate a temporary key file on the client
+      ansible.builtin.tempfile:
+        state: file
+        path: /run
+        prefix: headscale-client.
+      register: headscale_client_key_file
+
+    - name: Store the key with root-only permissions
+      ansible.builtin.copy:
+        content: "{{ headscale_client_auth_key.stdout | trim }}"
+        dest: "{{ headscale_client_key_file.path }}"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Join Headscale as the requested user
+      ansible.builtin.command:
+        argv:
+          - tailscale
+          - up
+          - "--login-server={{ headscale_client_url }}"
+          - "--auth-key=file:{{ headscale_client_key_file.path }}"
+          - "--hostname={{ headscale_client_hostname }}"
+          - "--accept-dns=false"
+          - "--accept-routes={{ headscale_client_accept_routes | bool | ternary('true', 'false') }}"
+          - --timeout=45s
+      no_log: true
+
+  always:
+    - name: Delete the temporary enrollment key
+      ansible.builtin.file:
+        path: "{{ headscale_client_key_file.path }}"
+        state: absent
+      when: headscale_client_key_file.path is defined
+
+- name: Resume a previously stopped Tailscale connection
+  ansible.builtin.command: tailscale up
+  timeout: 60
+  when: (headscale_client_initial_status.stdout | from_json).BackendState == 'Stopped'
+
+- name: Wait for the client to acquire a Tailscale address
+  ansible.builtin.command: tailscale status --json --peers=false
+  register: headscale_client_status
+  changed_when: false
+  until: >-
+    (headscale_client_status.stdout | from_json).BackendState == 'Running' and
+    (headscale_client_status.stdout | from_json).TailscaleIPs | default([], true) | length > 0
+  retries: 10
+  delay: 2
+
+- name: Read Headscale nodes and match the client's Tailscale address
+  ansible.builtin.command: headscale nodes list --output json
+  delegate_to: "{{ headscale_client_admin_host }}"
+  register: headscale_client_nodes
+  changed_when: false
+  no_log: true
+
+- name: Identify the enrolled node
+  vars:
+    headscale_client_ip: "{{ (headscale_client_status.stdout | from_json).TailscaleIPs | first }}"
+    headscale_client_matching_nodes: >-
+      {{ (headscale_client_nodes.stdout | from_json | default([], true))
+         | selectattr('ip_addresses', 'contains', headscale_client_ip) | list }}
+  block:
+    - name: Verify the node belongs to the requested user
+      ansible.builtin.assert:
+        that:
+          - headscale_client_matching_nodes | length == 1
+          - headscale_client_matching_nodes[0].user.id == headscale_client_user_records[0].id
+        fail_msg: "The enrolled node could not be matched to {{ headscale_client_user }} on this Headscale server."
+
+    - name: Record the verified Headscale node ID
+      ansible.builtin.set_fact:
+        headscale_client_node_id: "{{ headscale_client_matching_nodes[0].id }}"

@@ -1,0 +1,10 @@
+---
+all:
+  hosts:
+    headscale-vm:
+    subnet-router:
+    tailnet-client:
+  vars:
+    headscale_client_server_url: http://headscale-vm:8080
+    headscale_client_admin_host: headscale-vm
+    headscale_client_user: compose-user
