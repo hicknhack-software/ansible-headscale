@@ -1,0 +1,8 @@
+---
+- name: Install PostgreSQL and its Ansible driver
+  ansible.builtin.apt:
+    name:
+      - postgresql
+      - python3-psycopg2
+    update_cache: true
+    cache_valid_time: 3600

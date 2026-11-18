@@ -1,0 +1,47 @@
+---
+# {{ ansible_managed }}
+server_url: {{ headscale_server_url | to_json }}
+listen_addr: "{{ headscale_listen_address }}:{{ headscale_port }}"
+trusted_proxies: {{ headscale_trusted_proxies | to_json }}
+
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+  allocation: sequential
+
+derp:
+  server:
+    enabled: {{ headscale_derp_enabled | bool | to_json }}
+{% if headscale_derp_enabled | bool %}
+    region_id: {{ headscale_derp_region_id }}
+    region_code: {{ headscale_derp_region_code | to_json }}
+    region_name: {{ headscale_derp_region_name | to_json }}
+    verify_clients: true
+    stun_listen_addr: "0.0.0.0:{{ headscale_stun_port }}"
+    private_key_path: /var/lib/headscale/derp_server_private.key
+    automatically_add_embedded_derp_region: true
+{% if headscale_derp_ipv4 %}
+    ipv4: {{ headscale_derp_ipv4 | to_json }}
+{% endif %}
+{% endif %}
+  urls: {{ headscale_derp_map_urls | to_json }}
+  auto_update_enabled: true
+  update_frequency: 3h
+
+database:
+  type: postgres
+  postgres:
+    host: /var/run/postgresql
+    name: headscale
+    user: headscale
+    ssl: false
+
+policy:
+  mode: database
+
+dns:
+  magic_dns: false
+  override_local_dns: false

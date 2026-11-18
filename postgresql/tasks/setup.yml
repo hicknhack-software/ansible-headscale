@@ -1,0 +1,19 @@
+---
+- name: Enable and start PostgreSQL
+  ansible.builtin.systemd_service:
+    name: postgresql
+    enabled: true
+    state: started
+
+- name: Provision the Headscale database
+  become_user: postgres
+  block:
+    - name: Create the database role for peer authentication
+      community.postgresql.postgresql_user:
+        name: headscale
+        role_attr_flags: NOSUPERUSER,NOCREATEDB,NOCREATEROLE
+
+    - name: Create the Headscale database
+      community.postgresql.postgresql_db:
+        name: headscale
+        owner: headscale

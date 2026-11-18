@@ -1,0 +1,15 @@
+  ProxyPreserveHost On
+  RequestHeader set X-Forwarded-Proto "https"
+  RequestHeader unset True-Client-IP
+  RequestHeader unset X-Forwarded-For
+  RequestHeader set X-Real-IP "expr=%{REMOTE_ADDR}"
+
+{% if use_letsencrypt and is_http_challenge %}
+  ProxyPass "{{ http_challenge_path }}" "!"
+{% endif %}
+  ProxyPass "/web" "http://{{ headscale_proxy_backend_address }}:{{ headscale_proxy_ui_port }}/web"
+  ProxyPassReverse "/web" "http://{{ headscale_proxy_backend_address }}:{{ headscale_proxy_ui_port }}/web"
+
+  # Headscale uses custom Upgrade tokens for its control protocol and embedded DERP.
+  ProxyPass "/" "{{ vhost_config_target }}/" upgrade=any
+  ProxyPassReverse "/" "{{ vhost_config_target }}/"

@@ -1,0 +1,18 @@
+---
+- name: Register Headscale with Apache
+  ansible.builtin.import_role:
+    name: hicknhack-software.reverse-proxy/apache/vhost
+  vars:
+    main_domain: "{{ headscale_proxy_domain }}"
+    ip_group: "{{ headscale_proxy_ip_group }}"
+    ports: "{{ headscale_proxy_ports }}"
+    reverse_proxy_target:
+      ip: "{{ headscale_proxy_backend_address }}"
+      port: "{{ headscale_proxy_api_port }}"
+    # Use the Headscale fragment with the reverse proxy role's TLS and redirect handling.
+    vhost_config_type: "{{ vhost_config.type | default('headscale') }}"
+    vhost_priority_type: "{{ vhost_config.type | default('reverse_proxy') }}{{ '_wildcard' if vhost_config_wildcard else '' }}"
+
+- name: Clean up stale Headscale vhosts
+  ansible.builtin.import_role:
+    name: hicknhack-software.reverse-proxy/apache/vhost/cleanup

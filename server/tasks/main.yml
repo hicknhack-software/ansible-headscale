@@ -1,0 +1,6 @@
+---
+- name: Install Headscale
+  ansible.builtin.import_tasks: install.yml
+
+- name: Set up Headscale
+  ansible.builtin.import_tasks: setup.yml

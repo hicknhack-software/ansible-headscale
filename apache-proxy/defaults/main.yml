@@ -1,0 +1,8 @@
+---
+headscale_proxy_backend_address: "{{ ansible_default_ipv4.address }}"
+headscale_proxy_api_port: 8080
+headscale_proxy_ui_port: 8081
+headscale_proxy_ip_group: public
+headscale_proxy_ports:
+  http: 80
+  https: 443

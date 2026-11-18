@@ -1,0 +1,44 @@
+---
+- name: Configure the Headscale-UI site
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/sites-available/headscale-ui
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload Headscale-UI Nginx
+
+- name: Disable the default Nginx site on the dedicated VM
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload Headscale-UI Nginx
+
+- name: Enable the Headscale-UI site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/headscale-ui
+    path: /etc/nginx/sites-enabled/headscale-ui
+    state: link
+  notify: Reload Headscale-UI Nginx
+
+- name: Validate the Nginx configuration
+  ansible.builtin.command: /usr/sbin/nginx -t
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Enable and start the Headscale-UI web server
+  ansible.builtin.systemd_service:
+    name: nginx
+    enabled: true
+    state: started
+
+- name: Apply the Headscale-UI configuration
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify the UI is served by the VM
+  ansible.builtin.uri:
+    url: "http://{{ headscale_ui_listen_address }}:{{ headscale_ui_port }}/web/"
+  register: headscale_ui_health
+  until: headscale_ui_health.status == 200
+  retries: 5
+  delay: 2

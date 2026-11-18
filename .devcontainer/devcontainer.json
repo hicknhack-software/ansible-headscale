@@ -1,0 +1,26 @@
+{
+  "name": "headscale-ansible-dev",
+  "dockerComposeFile": ["../docker-compose.yml", "docker-compose.override.yml"],
+  "service": "ansible",
+  "runServices": ["ansible", "headscale-vm"],
+  "overrideCommand": true,
+  "containerUser": "root",
+  "workspaceFolder": "/etc/ansible/roles/hicknhack-software.headscale",
+  "postCreateCommand": "ansible-galaxy collection install -r requirements.yml",
+  "customizations": {
+    "vscode": {
+      "extensions": ["redhat.ansible"],
+      "settings": {
+        "redhat.telemetry.enabled": false,
+        "ansible.lightspeed.enabled": false,
+        "ansible.executionEnvironment.enabled": false,
+        "files.associations": {
+          "**/defaults/*.yml": "ansible",
+          "**/handlers/*.yml": "ansible",
+          "**/tasks/*.yml": "ansible",
+          "**/templates/*.j2": "ansible-jinja"
+        }
+      }
+    }
+  }
+}

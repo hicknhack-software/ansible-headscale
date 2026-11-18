@@ -1,0 +1,80 @@
+---
+- name: Install Nginx Light and the download prerequisites
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - nginx-light
+      - unzip
+    update_cache: true
+    cache_valid_time: 3600
+    policy_rc_d: 101
+
+- name: Create the Headscale-UI root directory
+  ansible.builtin.file:
+    path: "{{ headscale_ui_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Check whether the pinned UI release is installed
+  ansible.builtin.stat:
+    path: "{{ headscale_ui_release_dir }}/web/index.html"
+  register: headscale_ui_index
+
+- name: Install the pinned Headscale-UI release
+  when:
+    - not headscale_ui_index.stat.exists
+    - not ansible_check_mode
+  block:
+    - name: Create a staging directory on the UI filesystem
+      ansible.builtin.tempfile:
+        path: "{{ headscale_ui_root }}"
+        state: directory
+        prefix: .install-
+      register: headscale_ui_staging
+
+    - name: Download and verify the Headscale-UI archive
+      ansible.builtin.get_url:
+        url: "https://github.com/gurucomputing/headscale-ui/releases/download/{{ headscale_ui_version }}/headscale-ui.zip"
+        dest: "{{ headscale_ui_staging.path }}/headscale-ui.zip"
+        checksum: "{{ headscale_ui_checksum }}"
+        mode: "0600"
+
+    - name: Extract Headscale-UI
+      ansible.builtin.unarchive:
+        src: "{{ headscale_ui_staging.path }}/headscale-ui.zip"
+        dest: "{{ headscale_ui_staging.path }}"
+        remote_src: true
+        owner: root
+        group: root
+
+    - name: Verify the staged release has an entry point
+      ansible.builtin.stat:
+        path: "{{ headscale_ui_staging.path }}/web/index.html"
+      register: headscale_ui_staged_index
+      failed_when: not headscale_ui_staged_index.stat.exists
+
+    - name: Create the release directory
+      ansible.builtin.file:
+        path: "{{ headscale_ui_release_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Publish the extracted UI
+      ansible.builtin.command:
+        argv:
+          - mv
+          - --no-target-directory
+          - "{{ headscale_ui_staging.path }}/web"
+          - "{{ headscale_ui_release_dir }}/web"
+        creates: "{{ headscale_ui_release_dir }}/web/index.html"
+
+  always:
+    - name: Remove the UI archive and staging directory
+      ansible.builtin.file:
+        path: "{{ headscale_ui_staging.path }}"
+        state: absent
+      when: headscale_ui_staging.path is defined

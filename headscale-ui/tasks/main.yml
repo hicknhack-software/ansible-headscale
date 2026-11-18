@@ -1,0 +1,6 @@
+---
+- name: Install Headscale-UI
+  ansible.builtin.import_tasks: install.yml
+
+- name: Set up the Headscale-UI web server
+  ansible.builtin.import_tasks: setup.yml

@@ -1,0 +1,45 @@
+---
+- name: Install the Debian package and download prerequisites
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - xz-utils
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Gather installed package versions
+  ansible.builtin.package_facts:
+
+- name: Install the pinned Headscale release
+  vars:
+    headscale_deb: "headscale_{{ headscale_version }}_linux_{{ headscale_deb_arch }}.deb"
+    headscale_installed_versions: "{{ ansible_facts.packages.get('headscale', []) | map(attribute='version') | list }}"
+  when:
+    - headscale_version not in headscale_installed_versions
+    - not ansible_check_mode
+  block:
+    - name: Create a temporary directory for the Debian package
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: .headscale
+      register: headscale_download
+
+    - name: Download and verify the Headscale package
+      ansible.builtin.get_url:
+        url: "https://github.com/juanfont/headscale/releases/download/v{{ headscale_version }}/{{ headscale_deb }}"
+        dest: "{{ headscale_download.path }}/{{ headscale_deb }}"
+        checksum: "{{ headscale_deb_checksum }}"
+        mode: "0644"
+
+    - name: Install the Headscale package
+      ansible.builtin.apt:
+        deb: "{{ headscale_download.path }}/{{ headscale_deb }}"
+        policy_rc_d: 101
+      notify: Restart Headscale
+
+  always:
+    - name: Remove the downloaded Headscale package
+      ansible.builtin.file:
+        path: "{{ headscale_download.path }}"
+        state: absent
+      when: headscale_download.path is defined

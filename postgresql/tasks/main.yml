@@ -1,0 +1,6 @@
+---
+- name: Install PostgreSQL
+  ansible.builtin.import_tasks: install.yml
+
+- name: Set up PostgreSQL for Headscale
+  ansible.builtin.import_tasks: setup.yml

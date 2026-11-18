@@ -1,0 +1,2 @@
+---
+headscale_ui_release_dir: "{{ headscale_ui_root }}/{{ headscale_ui_version }}"

@@ -1,0 +1,57 @@
+---
+- name: Create the Headscale state directory
+  ansible.builtin.file:
+    path: /var/lib/headscale
+    state: directory
+    owner: headscale
+    group: headscale
+    mode: "0750"
+
+- name: Stage the Headscale configuration
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/headscale/ansible-config.yaml
+    owner: root
+    group: headscale
+    mode: "0640"
+
+- name: Validate the configuration and database as the service user
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/runuser
+      - --user
+      - headscale
+      - --
+      - /usr/bin/headscale
+      - --config
+      - /etc/headscale/ansible-config.yaml
+      - configtest
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Install the validated Headscale configuration
+  ansible.builtin.copy:
+    src: /etc/headscale/ansible-config.yaml
+    dest: /etc/headscale/config.yaml
+    remote_src: true
+    owner: root
+    group: headscale
+    mode: "0640"
+  notify: Restart Headscale
+
+- name: Apply the Headscale configuration
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start Headscale
+  ansible.builtin.systemd_service:
+    name: headscale
+    enabled: true
+    state: started
+
+- name: Wait for Headscale to become healthy
+  ansible.builtin.uri:
+    url: "http://{{ headscale_listen_address }}:{{ headscale_port }}/health"
+  register: headscale_health
+  until: headscale_health.status == 200
+  retries: 10
+  delay: 2

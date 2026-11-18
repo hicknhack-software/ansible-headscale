@@ -1,0 +1,29 @@
+---
+name: ansible-headscale
+
+services:
+  ansible:
+    image: ghcr.io/hicknhack-software/ansible:noble-2.18.7
+    command: sleep infinity
+    working_dir: /etc/ansible/roles/hicknhack-software.headscale
+    environment:
+      ANSIBLE_ROLES_PATH: /etc/ansible/roles
+    volumes:
+      - .:/etc/ansible/roles/hicknhack-software.headscale
+      - test-ssh:/test-ssh
+
+  headscale-vm:
+    image: ghcr.io/hicknhack-software/ansible-target:noble
+    privileged: true
+    tmpfs:
+      - /run
+      - /run/lock
+      - /tmp
+    volumes:
+      - test-ssh:/root/.ssh:ro
+    ports:
+      - "127.0.0.1:18080:8080"
+      - "127.0.0.1:18081:8081"
+
+volumes:
+  test-ssh:

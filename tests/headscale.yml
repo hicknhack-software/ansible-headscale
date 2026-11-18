@@ -1,0 +1,55 @@
+---
+- name: Exercise the Headscale and UI roles on Ubuntu Noble
+  hosts: headscale-vm
+  gather_facts: false
+  become: true
+  vars:
+    headscale_server_url: http://headscale-vm:8080
+
+  pre_tasks:
+    - name: Wait for the test VM
+      ansible.builtin.wait_for_connection:
+        timeout: 60
+
+    - name: Gather the test VM facts
+      ansible.builtin.setup:
+
+  roles:
+    - hicknhack-software.headscale/postgresql
+    - hicknhack-software.headscale/server
+    - hicknhack-software.headscale/headscale-ui
+
+  tasks:
+    - name: Read Headscale's API health
+      ansible.builtin.uri:
+        url: "http://{{ headscale_listen_address }}:{{ headscale_port }}/health"
+      register: test_headscale_health
+
+    - name: Read a Headscale-UI page
+      ansible.builtin.uri:
+        url: "http://{{ headscale_ui_listen_address }}:{{ headscale_ui_port }}/web/settings.html"
+        return_content: true
+      register: test_headscale_ui
+
+    - name: Find release archives in the UI root
+      ansible.builtin.find:
+        paths: "{{ headscale_ui_root }}"
+        patterns: "*.zip"
+        recurse: true
+        hidden: true
+      register: test_headscale_ui_archives
+
+    - name: Find Headscale package download directories
+      ansible.builtin.find:
+        paths: /tmp
+        file_type: directory
+        patterns: "ansible.*.headscale"
+      register: test_headscale_deb_downloads
+
+    - name: Check the API, the UI and archive cleanup
+      ansible.builtin.assert:
+        that:
+          - test_headscale_health.json.status == 'pass'
+          - "'headscale' in (test_headscale_ui.content | lower)"
+          - test_headscale_ui_archives.matched == 0
+          - test_headscale_deb_downloads.matched == 0

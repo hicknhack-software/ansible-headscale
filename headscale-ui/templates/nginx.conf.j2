@@ -1,0 +1,20 @@
+# {{ ansible_managed }}
+server {
+    listen {{ headscale_ui_listen_address }}:{{ headscale_ui_port }};
+    server_name _;
+    root {{ headscale_ui_release_dir }};
+    absolute_redirect off;
+
+    location = /web {
+        return 308 /web/;
+    }
+
+    location /web/ {
+        index index.html;
+        try_files $uri $uri/ =404;
+    }
+
+    location / {
+        return 404;
+    }
+}
